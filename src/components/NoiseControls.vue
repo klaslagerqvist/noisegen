@@ -97,6 +97,11 @@ function randomizeSeed() {
         <input v-model="settings.tileable" type="checkbox" />
         <span>Tileable</span>
       </label>
+
+      <label class="field field--check">
+        <input v-model="settings.invert" type="checkbox" />
+        <span>Invert</span>
+      </label>
     </section>
 
     <section class="group">

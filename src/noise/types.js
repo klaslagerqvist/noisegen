@@ -32,6 +32,7 @@
  * @property {number} height
  * @property {number} depth
  * @property {boolean} tileable
+ * @property {boolean} invert
  * @property {boolean} useFbm
  * @property {number} octaves
  * @property {number} persistence

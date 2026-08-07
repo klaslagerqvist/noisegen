@@ -31,6 +31,7 @@ export function generateNoise(settings) {
     height,
     depth,
     tileable,
+    invert,
     useFbm,
     octaves,
     persistence,
@@ -70,7 +71,9 @@ export function generateNoise(settings) {
         const nx = (x / width) * domain
         const raw = sampleAt(nx, ny, nz)
         const idx = x + y * width + z * width * height
-        data[idx] = normalize(raw, lo, hi)
+        let v = normalize(raw, lo, hi)
+        if (invert) v = 1 - v
+        data[idx] = v
       }
     }
   }
