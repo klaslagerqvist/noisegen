@@ -13,6 +13,28 @@ function normalize(value, lo, hi) {
 }
 
 /**
+ * Stretch an entire buffer to fill [0, 1] using its actual min/max.
+ * @param {Float32Array} data
+ */
+function remapMinMax(data) {
+  let minV = Infinity
+  let maxV = -Infinity
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i]
+    if (v < minV) minV = v
+    if (v > maxV) maxV = v
+  }
+  if (!(maxV > minV)) {
+    data.fill(0.5)
+    return
+  }
+  const scale = 1 / (maxV - minV)
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (data[i] - minV) * scale
+  }
+}
+
+/**
  * Generate a noise volume / image into a Float32Array in [0, 1].
  *
  * @param {import('./types.js').GenerateSettings} settings
@@ -32,6 +54,7 @@ export function generateNoise(settings) {
     depth,
     tileable,
     invert,
+    normalizeMode = 'range',
     useFbm,
     octaves,
     persistence,
@@ -76,6 +99,10 @@ export function generateNoise(settings) {
         data[idx] = v
       }
     }
+  }
+
+  if (normalizeMode === 'minmax') {
+    remapMinMax(data)
   }
 
   return { data, width, height, depth: slices, dimensions }

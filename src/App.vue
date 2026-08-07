@@ -16,6 +16,7 @@ const settings = reactive({
   depth: 64,
   tileable: true,
   invert: false,
+  normalizeMode: 'range',
   useFbm: true,
   octaves: 4,
   persistence: 0.5,

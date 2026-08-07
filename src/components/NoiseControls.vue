@@ -102,6 +102,20 @@ function randomizeSeed() {
         <input v-model="settings.invert" type="checkbox" />
         <span>Invert</span>
       </label>
+
+      <label class="field">
+        <span>
+          Normalize
+          <em
+            title="Range uses the algorithm’s declared output bounds. Min/max stretches the finished texture to fill 0–1 (better contrast for inverted Worley / clouds)."
+            >?</em
+          >
+        </span>
+        <select v-model="settings.normalizeMode">
+          <option value="range">Algorithm range</option>
+          <option value="minmax">Min / max (volume)</option>
+        </select>
+      </label>
     </section>
 
     <section class="group">
@@ -124,8 +138,26 @@ function randomizeSeed() {
           :step="param.step ?? 1"
         />
         <output v-if="param.type === 'number'">
-          {{ settings.algorithmParams[param.key] }}
+          {{
+            typeof settings.algorithmParams[param.key] === 'number' &&
+            param.step &&
+            param.step < 1
+              ? Number(settings.algorithmParams[param.key]).toFixed(2)
+              : settings.algorithmParams[param.key]
+          }}
         </output>
+        <select
+          v-else-if="param.type === 'select'"
+          v-model="settings.algorithmParams[param.key]"
+        >
+          <option
+            v-for="opt in param.options"
+            :key="String(opt.value)"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
+        </select>
       </label>
     </section>
 

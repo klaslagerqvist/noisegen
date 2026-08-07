@@ -33,6 +33,9 @@
  * @property {number} depth
  * @property {boolean} tileable
  * @property {boolean} invert
+ * @property {'range' | 'minmax'} normalizeMode
+ *   range = map via algorithm.outputRange;
+ *   minmax = stretch final volume to [0, 1] (Lague-style)
  * @property {boolean} useFbm
  * @property {number} octaves
  * @property {number} persistence

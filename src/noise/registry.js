@@ -1,7 +1,8 @@
 import perlin from './algorithms/perlin.js'
+import worley from './algorithms/worley.js'
 
 /** @type {import('./types.js').NoiseAlgorithm[]} */
-const algorithms = [perlin]
+const algorithms = [perlin, worley]
 
 /**
  * @param {string} id
