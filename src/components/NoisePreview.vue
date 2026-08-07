@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as THREE from 'three'
 import { bufferToRgba } from '../noise/generate.js'
 import { downloadPng } from '../noise/exportPng.js'
+import { exportRaw3d } from '../noise/exportRaw.js'
 
 const props = defineProps({
   buffer: {
@@ -119,6 +120,11 @@ function exportCurrent() {
   downloadPng(rgba, width, height, `noise-${width}x${height}${sliceTag}.png`)
 }
 
+function exportVolumeRaw() {
+  if (!props.buffer || props.buffer.dimensions !== 3) return
+  exportRaw3d(props.buffer)
+}
+
 function onResize() {
   resize()
 }
@@ -173,14 +179,26 @@ onBeforeUnmount(() => {
         <span>Preview 2×2 tiling</span>
       </label>
 
-      <button
-        type="button"
-        class="btn"
-        :disabled="!buffer || generating"
-        @click="exportCurrent"
-      >
-        Export PNG
-      </button>
+      <div class="export-actions">
+        <button
+          type="button"
+          class="btn"
+          :disabled="!buffer || generating"
+          @click="exportCurrent"
+        >
+          Export PNG
+        </button>
+        <button
+          v-if="buffer?.dimensions === 3"
+          type="button"
+          class="btn btn--secondary"
+          :disabled="!buffer || generating"
+          title="R8 volume, Z-major slices — dims are in the filename"
+          @click="exportVolumeRaw"
+        >
+          Export RAW (3D)
+        </button>
+      </div>
     </div>
 
     <div ref="host" class="preview__canvas">
@@ -248,8 +266,14 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.btn {
+.export-actions {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.btn {
   border: none;
   border-radius: 6px;
   padding: 0.5rem 1rem;
@@ -261,6 +285,12 @@ onBeforeUnmount(() => {
   color: var(--accent-contrast);
 }
 
+.btn--secondary {
+  background: var(--panel-2);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+}
+
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -268,6 +298,12 @@ onBeforeUnmount(() => {
 
 .btn:not(:disabled):hover {
   filter: brightness(1.08);
+}
+
+.btn--secondary:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  filter: none;
 }
 
 .preview__canvas {
