@@ -321,6 +321,9 @@ module.perlin2p = function(x, y, periodX, periodY) {
     var X1 = positiveMod(X + 1, periodX);
     var Y1 = positiveMod(Y + 1, periodY);
 
+    // Hash into the 256-entry tables (period may exceed 256 on high FBM octaves)
+    X0 &= 255; Y0 &= 255; X1 &= 255; Y1 &= 255;
+
     var n00 = gradP[X0 + perm[Y0]].dot2(x, y);
     var n01 = gradP[X0 + perm[Y1]].dot2(x, y - 1);
     var n10 = gradP[X1 + perm[Y0]].dot2(x - 1, y);
@@ -346,6 +349,10 @@ module.perlin3p = function(x, y, z, periodX, periodY, periodZ) {
     var X1 = positiveMod(X + 1, periodX);
     var Y1 = positiveMod(Y + 1, periodY);
     var Z1 = positiveMod(Z + 1, periodZ);
+
+    // Hash into the 256-entry tables (period may exceed 256 on high FBM octaves)
+    X0 &= 255; Y0 &= 255; Z0 &= 255;
+    X1 &= 255; Y1 &= 255; Z1 &= 255;
 
     var n000 = gradP[X0 + perm[Y0 + perm[Z0]]].dot3(x, y, z);
     var n001 = gradP[X0 + perm[Y0 + perm[Z1]]].dot3(x, y, z - 1);
