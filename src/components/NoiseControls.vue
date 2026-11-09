@@ -1,67 +1,166 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { listAlgorithms, getAlgorithm, defaultAlgorithmParams } from '../noise/registry.js'
+import { createChannelSettings } from '../noise/channelDefaults.js'
 
 const settings = defineModel({ type: Object, required: true })
 
 const algorithms = listAlgorithms()
+const activeChannelKey = ref('r')
 
-const algorithm = computed(() => getAlgorithm(settings.value.algorithmId))
+const channelKeys = /** @type {const} */ (['r', 'g', 'b'])
+
+const isRgb = computed(() => settings.value.packing === 'rgb')
+
+const activeChannel = computed(() => {
+  const key = isRgb.value ? activeChannelKey.value : 'r'
+  return settings.value.channels[key]
+})
+
+const algorithm = computed(() => getAlgorithm(activeChannel.value?.algorithmId))
 
 const showFbm = computed(
-  () => algorithm.value?.supports.fbm && settings.value.useFbm,
+  () => algorithm.value?.supports.fbm && activeChannel.value?.useFbm,
 )
 
+const isBaked = computed(() => Boolean(algorithm.value?.supports.bake))
+
+/** Algorithms that support the shared dimension. */
+const availableAlgorithms = computed(() =>
+  algorithms.filter((a) => {
+    const full = getAlgorithm(a.id)
+    return full?.supports.dims.includes(settings.value.dimensions)
+  }),
+)
+
+/** Shared dimension options: intersection of used channel algorithms. */
+const availableDims = computed(() => {
+  const keys = isRgb.value ? channelKeys : ['r']
+  /** @type {Set<number> | null} */
+  let dims = null
+  for (const key of keys) {
+    const algo = getAlgorithm(settings.value.channels[key].algorithmId)
+    if (!algo) continue
+    const set = new Set(algo.supports.dims)
+    dims = dims ? new Set([...dims].filter((d) => set.has(d))) : set
+  }
+  return dims && dims.size ? [...dims].sort() : [2]
+})
+
+const showTileable = computed(() => {
+  const keys = isRgb.value ? channelKeys : ['r']
+  return keys.some((key) => {
+    const algo = getAlgorithm(settings.value.channels[key].algorithmId)
+    return algo?.supports.tileable && !algo.supports.bake
+  })
+})
+
+function onAlgorithmChange() {
+  const ch = activeChannel.value
+  const algo = getAlgorithm(ch.algorithmId)
+  if (!algo) return
+  ch.algorithmParams = defaultAlgorithmParams(algo)
+  if (!algo.supports.fbm) ch.useFbm = false
+  if (algo.supports.bake) settings.value.tileable = true
+}
+
 watch(
-  () => settings.value.algorithmId,
-  (id) => {
-    const algo = getAlgorithm(id)
-    if (!algo) return
-    settings.value.algorithmParams = defaultAlgorithmParams(algo)
-    if (!algo.supports.fbm) settings.value.useFbm = false
-    if (!algo.supports.dims.includes(settings.value.dimensions)) {
-      settings.value.dimensions = algo.supports.dims[0]
+  () => settings.value.dimensions,
+  (dims) => {
+    const keys = isRgb.value ? channelKeys : ['r']
+    for (const key of keys) {
+      const ch = settings.value.channels[key]
+      const algo = getAlgorithm(ch.algorithmId)
+      if (algo && !algo.supports.dims.includes(dims)) {
+        const fallback =
+          availableAlgorithms.value[0]?.id ??
+          algorithms.find((a) => getAlgorithm(a.id)?.supports.dims.includes(dims))?.id ??
+          'perlin'
+        Object.assign(ch, createChannelSettings(fallback, { seed: ch.seed }))
+      }
     }
   },
 )
 
+watch(
+  () => settings.value.packing,
+  (packing) => {
+    if (packing === 'mono') activeChannelKey.value = 'r'
+  },
+)
+
+watch(availableDims, (dims) => {
+  if (!dims.includes(settings.value.dimensions)) {
+    settings.value.dimensions = /** @type {2|3} */ (dims[0])
+  }
+})
+
 function randomizeSeed() {
-  settings.value.seed = Math.floor(Math.random() * 65536)
+  activeChannel.value.seed = Math.floor(Math.random() * 65536)
+}
+
+function randomizeAllSeeds() {
+  for (const key of channelKeys) {
+    settings.value.channels[key].seed = Math.floor(Math.random() * 65536)
+  }
+}
+
+function formatParam(param) {
+  const value = activeChannel.value.algorithmParams[param.key]
+  if (typeof value === 'number' && param.step && param.step < 1) {
+    return Number(value).toFixed(2)
+  }
+  return value
 }
 </script>
 
 <template>
-  <aside class="controls" v-if="algorithm">
+  <aside class="controls" v-if="algorithm && activeChannel">
     <header class="controls__header">
       <h1>NoiseGen</h1>
       <p>Pre-generate tileable noise textures for games.</p>
     </header>
 
     <section class="group">
-      <h2>Algorithm</h2>
-      <label class="field">
-        <span>Type</span>
-        <select v-model="settings.algorithmId">
-          <option v-for="a in algorithms" :key="a.id" :value="a.id">
-            {{ a.label }}
-          </option>
-        </select>
-      </label>
+      <h2>Output</h2>
+
+      <fieldset class="segmented">
+        <legend>Packing</legend>
+        <label class="segmented__option">
+          <input v-model="settings.packing" type="radio" value="mono" />
+          <span>Single</span>
+        </label>
+        <label class="segmented__option">
+          <input v-model="settings.packing" type="radio" value="rgb" />
+          <span>RGB pack</span>
+        </label>
+      </fieldset>
+
+      <p class="hint hint--info">
+        <template v-if="isRgb">
+          Independent noise per channel — one texture fetch in your shader.
+        </template>
+        <template v-else>
+          Single-channel (R8) texture — sample <code>.r</code> in your shader.
+        </template>
+      </p>
 
       <label class="field">
-        <span>Seed</span>
-        <div class="row">
-          <input v-model.number="settings.seed" type="number" min="0" max="65535" step="1" />
-          <button type="button" class="btn btn--ghost" @click="randomizeSeed">
-            Random
-          </button>
-        </div>
+        <span>Resolution</span>
+        <select v-model.number="settings.width">
+          <option :value="32">32 × 32</option>
+          <option :value="64">64 × 64</option>
+          <option :value="128">128 × 128</option>
+          <option :value="256">256 × 256</option>
+          <option :value="512">512 × 512</option>
+          <option :value="1024">1024 × 1024</option>
+        </select>
       </label>
 
       <fieldset class="segmented">
         <legend>Dimensions</legend>
         <label
-          v-for="d in algorithm.supports.dims"
+          v-for="d in availableDims"
           :key="d"
           class="segmented__option"
         >
@@ -69,19 +168,6 @@ function randomizeSeed() {
           <span>{{ d }}D</span>
         </label>
       </fieldset>
-    </section>
-
-    <section class="group">
-      <h2>Output</h2>
-      <label class="field">
-        <span>Resolution</span>
-        <select v-model.number="settings.width">
-          <option :value="128">128 × 128</option>
-          <option :value="256">256 × 256</option>
-          <option :value="512">512 × 512</option>
-          <option :value="1024">1024 × 1024</option>
-        </select>
-      </label>
 
       <label v-if="settings.dimensions === 3" class="field">
         <span>Depth (slices)</span>
@@ -93,13 +179,69 @@ function randomizeSeed() {
         </select>
       </label>
 
-      <label v-if="algorithm.supports.tileable" class="field field--check">
+      <label v-if="showTileable" class="field field--check">
         <input v-model="settings.tileable" type="checkbox" />
         <span>Tileable</span>
       </label>
+    </section>
+
+    <section class="group">
+      <h2>{{ isRgb ? 'Channel' : 'Algorithm' }}</h2>
+
+      <fieldset v-if="isRgb" class="segmented channel-tabs">
+        <legend>Edit channel</legend>
+        <label
+          v-for="key in channelKeys"
+          :key="key"
+          class="segmented__option"
+          :class="`channel-tabs__${key}`"
+        >
+          <input v-model="activeChannelKey" type="radio" :value="key" />
+          <span>{{ key.toUpperCase() }}</span>
+        </label>
+      </fieldset>
+
+      <label class="field">
+        <span>Type</span>
+        <select v-model="activeChannel.algorithmId" @change="onAlgorithmChange">
+          <option v-for="a in availableAlgorithms" :key="a.id" :value="a.id">
+            {{ a.label }}
+          </option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Seed</span>
+        <div class="row">
+          <input
+            v-model.number="activeChannel.seed"
+            type="number"
+            min="0"
+            max="65535"
+            step="1"
+          />
+          <button type="button" class="btn btn--ghost" @click="randomizeSeed">
+            Random
+          </button>
+        </div>
+      </label>
+
+      <button
+        v-if="isRgb"
+        type="button"
+        class="btn btn--ghost btn--block"
+        @click="randomizeAllSeeds"
+      >
+        Randomize all seeds
+      </button>
+
+      <p v-if="isBaked" class="hint hint--info">
+        Void-and-cluster LUT — use 64×64 or 128×128 for dither textures. Larger
+        sizes get slow.
+      </p>
 
       <label class="field field--check">
-        <input v-model="settings.invert" type="checkbox" />
+        <input v-model="activeChannel.invert" type="checkbox" />
         <span>Invert</span>
       </label>
 
@@ -107,11 +249,11 @@ function randomizeSeed() {
         <span>
           Normalize
           <em
-            title="Range uses the algorithm’s declared output bounds. Min/max stretches the finished texture to fill 0–1 (better contrast for inverted Worley / clouds)."
+            title="Range uses the algorithm’s declared output bounds. Min/max stretches this channel to fill 0–1 (better contrast for inverted Worley / clouds)."
             >?</em
           >
         </span>
-        <select v-model="settings.normalizeMode">
+        <select v-model="activeChannel.normalizeMode">
           <option value="range">Algorithm range</option>
           <option value="minmax">Min / max (volume)</option>
         </select>
@@ -131,24 +273,18 @@ function randomizeSeed() {
         </span>
         <input
           v-if="param.type === 'number'"
-          v-model.number="settings.algorithmParams[param.key]"
+          v-model.number="activeChannel.algorithmParams[param.key]"
           type="range"
           :min="param.min"
           :max="param.max"
           :step="param.step ?? 1"
         />
         <output v-if="param.type === 'number'">
-          {{
-            typeof settings.algorithmParams[param.key] === 'number' &&
-            param.step &&
-            param.step < 1
-              ? Number(settings.algorithmParams[param.key]).toFixed(2)
-              : settings.algorithmParams[param.key]
-          }}
+          {{ formatParam(param) }}
         </output>
         <select
           v-else-if="param.type === 'select'"
-          v-model="settings.algorithmParams[param.key]"
+          v-model="activeChannel.algorithmParams[param.key]"
         >
           <option
             v-for="opt in param.options"
@@ -164,7 +300,7 @@ function randomizeSeed() {
     <section v-if="algorithm.supports.fbm" class="group">
       <h2>Fractal (FBM)</h2>
       <label class="field field--check">
-        <input v-model="settings.useFbm" type="checkbox" />
+        <input v-model="activeChannel.useFbm" type="checkbox" />
         <span>Enable octaves</span>
       </label>
 
@@ -172,37 +308,37 @@ function randomizeSeed() {
         <label class="field">
           <span>Octaves</span>
           <input
-            v-model.number="settings.octaves"
+            v-model.number="activeChannel.octaves"
             type="range"
             min="1"
             max="8"
             step="1"
           />
-          <output>{{ settings.octaves }}</output>
+          <output>{{ activeChannel.octaves }}</output>
         </label>
         <label class="field">
           <span>Persistence</span>
           <input
-            v-model.number="settings.persistence"
+            v-model.number="activeChannel.persistence"
             type="range"
             min="0.1"
             max="1"
             step="0.05"
           />
-          <output>{{ settings.persistence.toFixed(2) }}</output>
+          <output>{{ activeChannel.persistence.toFixed(2) }}</output>
         </label>
         <label class="field">
           <span>Lacunarity</span>
           <input
-            v-model.number="settings.lacunarity"
+            v-model.number="activeChannel.lacunarity"
             type="range"
             min="1.5"
             max="4"
             step="0.5"
           />
-          <output>{{ settings.lacunarity }}</output>
+          <output>{{ activeChannel.lacunarity }}</output>
         </label>
-        <p v-if="settings.tileable && settings.lacunarity % 1 !== 0" class="hint">
+        <p v-if="settings.tileable && activeChannel.lacunarity % 1 !== 0" class="hint">
           Non-integer lacunarity can break tiling on higher octaves.
         </p>
       </template>
@@ -363,6 +499,21 @@ function randomizeSeed() {
   font-weight: 600;
 }
 
+.channel-tabs__r input:checked + span {
+  background: #c45c5c;
+  color: #1a0808;
+}
+
+.channel-tabs__g input:checked + span {
+  background: #5cad6e;
+  color: #08140c;
+}
+
+.channel-tabs__b input:checked + span {
+  background: #5c7ec4;
+  color: #080e1a;
+}
+
 .btn {
   border: none;
   border-radius: 6px;
@@ -383,10 +534,23 @@ function randomizeSeed() {
   color: var(--accent);
 }
 
+.btn--block {
+  width: 100%;
+}
+
 .hint {
   margin: 0;
   font-size: 0.75rem;
   color: var(--warn);
   line-height: 1.35;
+}
+
+.hint--info {
+  color: var(--muted);
+}
+
+.hint code {
+  font-family: var(--mono);
+  font-size: 0.7rem;
 }
 </style>

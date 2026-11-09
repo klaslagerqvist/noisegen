@@ -2,26 +2,28 @@
 import { reactive, ref, watch } from 'vue'
 import NoiseControls from './components/NoiseControls.vue'
 import NoisePreview from './components/NoisePreview.vue'
-import { getAlgorithm, defaultAlgorithmParams } from './noise/registry.js'
+import { createChannelSettings, createDefaultChannels } from './noise/channelDefaults.js'
 import { generateNoise } from './noise/generate.js'
 
-const algorithm = getAlgorithm('perlin')
+const defaults = createDefaultChannels()
 
 const settings = reactive({
-  algorithmId: 'perlin',
-  seed: 42,
+  packing: 'mono',
   dimensions: 2,
   width: 256,
-  height: 256,
   depth: 64,
   tileable: true,
-  invert: false,
-  normalizeMode: 'range',
-  useFbm: true,
-  octaves: 4,
-  persistence: 0.5,
-  lacunarity: 2,
-  algorithmParams: defaultAlgorithmParams(algorithm),
+  channels: {
+    r: createChannelSettings('perlin', {
+      seed: 42,
+      useFbm: true,
+      octaves: 4,
+      persistence: 0.5,
+      lacunarity: 2,
+    }),
+    g: defaults.g,
+    b: defaults.b,
+  },
 })
 
 const buffer = ref(null)
@@ -40,9 +42,26 @@ async function regenerate() {
 
   try {
     const result = generateNoise({
-      ...settings,
+      packing: settings.packing,
+      dimensions: settings.dimensions,
+      width: settings.width,
       height: settings.width,
-      algorithmParams: { ...settings.algorithmParams },
+      depth: settings.depth,
+      tileable: settings.tileable,
+      channels: {
+        r: {
+          ...settings.channels.r,
+          algorithmParams: { ...settings.channels.r.algorithmParams },
+        },
+        g: {
+          ...settings.channels.g,
+          algorithmParams: { ...settings.channels.g.algorithmParams },
+        },
+        b: {
+          ...settings.channels.b,
+          algorithmParams: { ...settings.channels.b.algorithmParams },
+        },
+      },
     })
     if (token !== genToken) return
     buffer.value = result
